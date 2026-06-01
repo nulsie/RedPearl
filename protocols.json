@@ -1,0 +1,54 @@
+{
+    "protocols": {
+        "LLMNR_v4": {
+            "mcast_grp": "224.0.0.252",
+            "port": 5355,
+            "type": "dns"
+        },
+        "LLMNR_v6": {
+            "mcast_grp": "ff02::1:3",
+            "port": 5355,
+            "type": "dns"
+        },
+        "mDNS_v4": {
+            "mcast_grp": "224.0.0.251",
+            "port": 5353,
+            "type": "dns"
+        },
+        "mDNS_v6": {
+            "mcast_grp": "ff02::fb",
+            "port": 5353,
+            "type": "dns"
+        },
+        "SSDP_v4": {
+            "mcast_grp": "239.255.255.250",
+            "port": 1900,
+            "type": "http"
+        },
+        "SSDP_v6": {
+            "mcast_grp": "ff02::c",
+            "port": 1900,
+            "type": "http"
+        },
+        "WS-Discovery_v4": {
+            "mcast_grp": "239.255.255.250",
+            "port": 3702,
+            "type": "soap"
+        },
+        "WS-Discovery_v6": {
+            "mcast_grp": "ff02::c",
+            "port": 3702,
+            "type": "soap"
+        },
+        "NetBIOS-NS": {
+            "mcast_grp": "224.0.0.252", 
+            "port": 137,
+            "type": "netbios"
+        },
+        "Dropbox": {
+            "mcast_grp": "239.255.255.250",
+            "port": 17500,
+            "type": "json"
+        }
+    }
+}
