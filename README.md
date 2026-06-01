@@ -320,9 +320,9 @@ scan --send-flare --resolve-mac --egraud
 scan --reverse-swarm --resolver 192.168.1.1
 ```
 
-![A default scan](default.jpg)
+![A default scan](pics/default.jpg)
 *A default scan*
-![A scan with additional flags](custom.jpg)
+![A scan with additional flags](pics/custom.jpg)
 *A scan with additional flags*
 
 ##### Argument Flags
