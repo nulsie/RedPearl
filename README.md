@@ -291,7 +291,7 @@ git clone https://github.com/nulsie/redpearl.git
 
 ##### Through pip:
 ```bash
-pip install redpearl
+pip install redpearl-scanner
 ```
 
 #### Usage 
