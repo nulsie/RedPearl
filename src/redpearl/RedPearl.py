@@ -41,21 +41,21 @@ logger = logging.getLogger("RedPearl")
 
 def setup_logger(debug_mode=False):
     logger = logging.getLogger("RedPearl")
-    # Set the base level
+    # set the base level
     logger.setLevel(logging.DEBUG) 
 
-    # 1. Console Handler (For clean operator output)
+    # 1. console handler (for clean operator output)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG if debug_mode else logging.INFO)
     console_formatter = logging.Formatter('%(message)s')
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # 2. File Handler (For detailed debugging and stack traces)
+    # 2. file handler (for detailed debugging and stack traces)
     file_handler = RotatingFileHandler(
         "redpearl_session.log", 
-        maxBytes=10 * 1024 * 1024, # 10 MB per file
-        backupCount=5               # Keep last 5 files
+        maxBytes=10 * 1024 * 1024, # 10mb per file
+        backupCount=5               # keep last 5 files
     )
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(module)s | %(message)s')
@@ -126,7 +126,7 @@ class RedPearl:
     def _poke_ip(self, target_ip):
         """Forces the OS to trigger an ARP or NDP request via dummy UDP transmission with randomized jitter."""
         try:
-            # Use mDNS (5353) to blend into normal discovery traffic
+            # use mdns (5353) to blend into normal discovery traffic
             target_port = 5353 
             payload = b'\x00'
                 
@@ -146,26 +146,25 @@ class RedPearl:
             logger.debug(f"[-] Poke failed for {target_ip}: {e}\n")
 
     def _run_egress_audit(self, target_ip):
-        """Worker thread entry-point to execute the paced egress auditor against a discovered endpoint."""
-        # Use a mutual exclusion lock to guarantee only one host undergoes auditing at a time
+        # use a mutual exclusion lock to guarantee only one host undergoes auditing at a time
         with self.egress_lock:
             if self.debug:
                 sys.stderr.write(f"[*] Starting targeted egress analysis against newly discovered host: {target_ip}\n")
                     
-            # Instantiate the auditor dynamically using the discovered internal/external IP
+            # start the auditor dynamically using the discovered internal/external IP
             auditor = EgressAuditor(
                 public_target=target_ip, 
                 timeout=1.5,
-                stealth_engine=self.stealth_engine # <--- Pass the instance
+                stealth_engine=self.stealth_engine # <--- pass the instance
             )
                     
             try:
-                # Execute sequentially with a 200ms delay between port connections
+                # execute sequentially with a 200ms delay between port connections
                 results = asyncio.run(auditor.run(custom_ports=self.egress_ports, target_average_delay=0.2))
                 allowed_paths = [r for r in results if r["egress_allowed"]]
                 allowed_ports = [r["port"] for r in allowed_paths]
                         
-                # Safe thread-bound modification of the main map object
+                # safe thread-bound modification of the main map object
                 with self.lock:
                     if target_ip in self.network_map:
                         if "Attributes" not in self.network_map[target_ip]:
@@ -191,8 +190,8 @@ class RedPearl:
         data, addr = self.wsd_engine.send_unicast_resolve(target_ip, target_uuid)
             
         if data and addr:
-            # Feed the unicast response cleanly back into the  framework pipeline!
-            # It will get completely unpacked, and update the UI display mapping automatically.
+            # feed the unicast response cleanly back into the  framework pipeline!
+            # it will get completely unpacked, and update the UI display mapping automatically.
             self._process_packet(data, addr, "WS-Discovery", "wsd_advanced")
 
     @staticmethod
@@ -202,26 +201,26 @@ class RedPearl:
             return txt_metadata
         
         try:
-            # 1. Unpack Header Safely
+            # 1. unpack header safely
             header = DefensiveParser.safe_unpack('!HHHHHH', payload, 0)
             _, flags, qdcount, ancount, nscount, arcount = header
             offset = 12
         
-            # 2. Skip Question Section using the safe pointer resolver
+            # 2. skip question section using the safe pointer resolver
             for _ in range(qdcount):
                 _, offset = DefensiveParser.safe_resolve_dns_pointer(payload, offset)
-                offset += 4  # Skip QTYPE and QCLASS
+                offset += 4  # skip QTYPE and QCLASS
         
-            # 3. Parse Records
+            # 3. parse records
             total_records = ancount + nscount + arcount
             for _ in range(total_records):
                 if offset >= len(payload):
                     break
         
-                # Skip the Record Name safely
+                # skip the record name safely
                 _, offset = DefensiveParser.safe_resolve_dns_pointer(payload, offset)
         
-                # Read Record Header safely
+                # read record header safely
                 rtype, rclass, ttl, rdlength = DefensiveParser.safe_unpack('!HHIH', payload, offset)
                 offset += 10
         
@@ -231,7 +230,7 @@ class RedPearl:
                 rdata = payload[offset:offset+rdlength]
                 offset += rdlength
         
-                if rtype == 16:  # TXT Record
+                if rtype == 16:  # txt Record
                     txt_offset = 0
                     while txt_offset < len(rdata):
                         txt_str_len = rdata[txt_offset]
@@ -249,20 +248,15 @@ class RedPearl:
                         txt_offset += txt_str_len
         
         except ParsingError:
-            pass # Catch DefensiveParser boundary and loop exceptions gracefully
+            pass # catch DefensiveParser boundary and loop exceptions gracefully
         except Exception:
             pass
         
         return txt_metadata
 
     def _correlate_dual_stack(self):
-        """
-        Internal Correlation Layer: Scans the active network map to identify when 
-        an IPv4 address and a Link-Local IPv6 address (fe80::/10) resolve to the 
-        exact same physical MAC address. Unifies them into a single Identity Object.
-        """
         with self.lock:
-            # Group current map contents by MAC address to find multi-stack candidates
+            # group current map contents by MAC address to find multi-stack candidates
             mac_groups = {}
             for ip, data in list(self.network_map.items()):
                 mac = data.get("MAC")
@@ -276,7 +270,7 @@ class RedPearl:
                 ipv4_candidate = None
                 ipv6_candidate = None
                         
-                # Separate the entries into IPv4 and Link-Local IPv6
+                # separate the entries into IPv4 and Link-Local IPv6
                 for ip, data in entries:
                     if ":" in ip:
                         if ip.lower().startswith("fe80:"):
@@ -284,17 +278,17 @@ class RedPearl:
                     else:
                         ipv4_candidate = (ip, data)
                         
-                # If we have a dual-stack pair that hasn't been unified yet
+                # if we have a dual-stack pair that hasn't been unified yet
                 if ipv4_candidate and ipv6_candidate:
                     ip4, d4 = ipv4_candidate
                     ip6, d6 = ipv6_candidate
                             
-                    # Check if they are already pointing to the exact same dictionary in memory
+                    # check if they are already pointing to the exact same dictionary in memory
                     if d4 is not d6:
                         if self.debug:
                             sys.stderr.write(f"[*] Correlating stacks: Unifying {ip4} and {ip6} under MAC {mac}\n")
                                 
-                        # Construct the unified Identity Object
+                        # construct the unified Identity Object
                         unified = {
                             "IPv4": ip4,
                             "IPv6": ip6,
@@ -305,10 +299,10 @@ class RedPearl:
                             "Attributes": d4.get("Attributes", {}).copy()
                         }
                                 
-                        # Merge passive payload attributes safely
+                        # merge passive payload attributes safely
                         unified["Attributes"].update(d6.get("Attributes", {}))
                                 
-                        # Heuristically select the highest-quality identity string
+                        # heuristically select the highest-quality identity string
                         id4 = d4.get("Identity", "")
                         id6 = d6.get("Identity", "")
                         if "Unknown" in id4 and "Unknown" not in id6:
@@ -316,33 +310,29 @@ class RedPearl:
                         elif "Unknown" in id6 and "Unknown" not in id4:
                             unified["Identity"] = id4
                         else:
-                            # Fallback to the longer, more descriptive name
+                            # fallback to the longer, more descriptive name
                             unified["Identity"] = id4 if len(id4) >= len(id6) else id6
                                 
-                        # Retain telemetry state machines from whichever stack recorded them
+                        # retain telemetry state machines from whichever stack recorded them
                         for source_dict in (d4, d6):
                             if "State" in source_dict:
                                 unified["State"] = source_dict["State"]
                                 unified["TelemetryFlags"] = source_dict.get("TelemetryFlags", {})
                                 unified["TelemetryProtocol"] = source_dict.get("TelemetryProtocol", "")
                                 
-                        # CRITICAL: Re-route map references to point to the exact same object
+                        # CRITICAL: re-route map references to point to the exact same object
                         self.network_map[ip4] = unified
                         self.network_map[ip6] = unified
                                 
                         print(f"\n[+] DUAL-STACK CORRELATION: Consolidated target context for {ip4} ⇄ {ip6} [{mac}]")
 
     def _verify_target_profiles(self):
-        """
-        Background task to refine target intelligence. Detects multi-stack 
-        high-value targets and flags potential honeytokens or network deception.
-        """
         time.sleep(5)
         while True:
             time.sleep(10)
                     
             with self.lock:
-                # FIX: Cast to list() to prevent "dictionary changed size during iteration" errors
+                # FIX: cast to list() to prevent "dictionary changed size during iteration" errors
                 for ip, current_data in list(self.network_map.items()):
                     if ip not in self.baseline_map:
                         continue
@@ -350,43 +340,38 @@ class RedPearl:
                     old_profile = FingerprintEngine.identify(self.baseline_map[ip])
                     new_profile = FingerprintEngine.identify(current_data)
                             
-                    # Ignore initial discovery transitions from Unknown
+                    # ignore initial discovery transitions from Unknown
                     if "Unknown" in old_profile:
                         self.baseline_map[ip] = copy.deepcopy(current_data)
                         continue
                             
-                    # Target profile has evolved or shifted
+                    # target profile has evolved or shifted
                     if old_profile != new_profile:
                         print(f"\n[+] RECON ADVANCEMENT: [{ip}]")
                         print(f"    └─ Identity Refined: {old_profile} ➔ {new_profile}")
                                 
-                        # Offensive Check: Identical hardware footprint, completely different OS signatures?
+                        # offensive Check: identical hardware footprint, completely different OS signatures?
                         old_mac = self.baseline_map[ip].get("MAC", "")
                         new_mac = current_data.get("MAC", "")
                                 
                         if old_mac == new_mac and old_mac != "":
-                            # If the signature swings wildly (e.g., Apple to Windows or IoT to Enterprise)
+                            # if the signature swings wildly 
                             # under the exact same MAC, it's a strong indicator of a honeypot script spinning up.
                             print(f"    └─ ALERT: Static MAC footprint with morphing signatures. Possible deception/honeypot segment.")
                                 
-                        # Sync the baseline to keep tracking transitions linearly
+                        # sync the baseline to keep tracking transitions linearly
                         self.baseline_map[ip] = copy.deepcopy(current_data)
 
     def _fire_compliant_flare(self):
-        """
-        Transmits a single, un-targeted mDNS service enumeration query.
-        Acts as a non-aggressive 'kickstart' to flood the multiplexer 
-        with baseline responses instantly.
-        """
         print("[*] Igniting compliant flare (Dual-Stack mDNS mass-query)...")
                 
-        # 1. Construct Raw DNS mDNS Query for _services._dns-sd._udp.local
+        # 1. construct raw dns mdns query for _services._dns-sd._udp.local
         dns_header = b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00'
         qname = b'\x09_services\x07_dns-sd\x04_udp\x05local\x00'
         qinfo = struct.pack('!HH', 12, 1)
         payload = dns_header + qname + qinfo
         
-        # Fire IPv4 mDNS Flare
+        # fire IPv4 mDNS flare
         try:
             sock_v4 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock_v4.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
@@ -397,7 +382,7 @@ class RedPearl:
         except Exception as e:
             logger.debug(f"[-] IPv4 Flare failed: {e}\n")
         
-        # Fire IPv6 mDNS Flare
+        # fire IPv6 mDNS flare
         try:
             sock_v6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
             sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 255)
@@ -411,22 +396,21 @@ class RedPearl:
             if self.debug:
                 sys.stderr.write("[*] Injecting active NetBIOS Node Status broadcast via ephemeral socket...\n")
                 
-            # Construct standard NetBIOS Wildcard Node Status Query payload
+            # construct standard NetBIOS wildcard node status query payload
             netbios_header = b'\xa1\xb2\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00'
             netbios_name = b'\x20CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\x00' # "*" padded
-            netbios_footer = b'\x00\x21\x00\x01' # Type: NS, Class: IN
+            netbios_footer = b'\x00\x21\x00\x01' # type: NS, Class: IN
             nb_payload = netbios_header + netbios_name + netbios_footer
     
             try:
-                # We broadcast OUT of the exact socket registered to the asyncio loop.
-                # Remote machines reply directly to our random unprivileged source port.
+                # broadcast OUT of the exact socket registered to the asyncio loop.
+                # remote machines reply directly to our random unprivileged source port.
                 self.netbios_sock.sendto(nb_payload, ('255.255.255.255', 137))
             except Exception as e:
                 if self.debug:
                     sys.stderr.write(f"[-] Sudoless NetBIOS broadcast injection failed: {e}\n")
 
     def _build_neighbor_cache(self):
-        """Delegates resolution to the robust multi-fallback resolver."""
         return NeighborCacheResolver.get_mac_mapping()
 
     def _neighbor_refresher(self):
@@ -447,24 +431,23 @@ class RedPearl:
             time.sleep(5)
 
     def _execute_ptr_lookup_worker(self, target_ip):
-        """Asynchronous execution container handled by REdPearlWorker pools."""
             
-        # 1. Unprivileged CLDAP Active Directory Profiling
+        # 1. unprivileged CLDAP active directory profiling
         cldap_data = self.dns_engine.query_cldap(target_ip)
 
         time.sleep(self.stealth_engine.get_poisson_delay(0.8)) 
 
         snmp_desc = ""
-        # Cycle through standard enterprise defaults
+        # cycle through standard enterprise defaults
         for comm in ["public", "private", "internal"]:
             snmp_desc = self.dns_engine.query_snmp(target_ip, community=comm)
             if snmp_desc:
-                break # Stop iterating once we get a valid hardware footprint
+                break # stop iterating once we get a valid hardware footprint
             time.sleep(self.stealth_engine.get_poisson_delay(0.5))
 
         time.sleep(self.stealth_engine.get_poisson_delay(0.8))
 
-        # 2. Traditional Inverse DNS PTR Swarm against Gateway
+        # 2. traditional inverse DNS PTR Swarm against gateway
         resolved_name = None
         if self.target_resolver:
             logger.debug(f"[*] Dispatching PTR query for {target_ip} to resolver {self.target_resolver}\n")
@@ -474,12 +457,12 @@ class RedPearl:
             if target_ip not in self.network_map:
                 return
                     
-            # Process AD Profiling First (Enterprise Context Takes Priority)
+            # process AD Profiling first (enterprise context yakes priority)
             if cldap_data and cldap_data.get("is_dc"):
                 indicators = cldap_data.get("indicators", [])
                     
-                # Heuristically format the extracted Netlogon strings
-                # Usually yields: [Forest/Domain, Hostname, AD Site Name]
+                # heuristically format the extracted Netlogon strings
+                # usually yields: [Forest/Domain, Hostname, AD Site Name]
                 ad_context = " | ".join(indicators[:3]) 
                     
                 self.network_map[target_ip]["Identity"] = f"Domain Controller [{ad_context}]"
@@ -488,7 +471,7 @@ class RedPearl:
                 if "Attributes" not in self.network_map[target_ip]:
                     self.network_map[target_ip]["Attributes"] = {}
                     
-                # The final string in the sequence is typically the physical/logical AD Site configuration
+                # the final string in the sequence is typically the physical/logical AD Site configuration
                 if len(indicators) > 2:
                     self.network_map[target_ip]["Attributes"]["ad_site"] = indicators[-1]
                         
@@ -497,9 +480,9 @@ class RedPearl:
             elif snmp_desc:
                 old_identity = self.network_map[target_ip].get("Identity", "")
                             
-                # Only override if the current identity isn't already highly descriptive
+                # only override if the current identity isn't already highly descriptive
                 if not old_identity or "Unknown" in old_identity or "Protocol" in old_identity:
-                    # Truncate for a clean UI output
+                    # truncate for a clean UI output
                     self.network_map[target_ip]["Identity"] = f"SNMP: {snmp_desc[:65]}..."
                             
                     self.network_map[target_ip]["Protocols"].add("SNMP")
@@ -510,16 +493,16 @@ class RedPearl:
                             
                     print(f"\n[*] HARDWARE DISCOVERY: {target_ip} footprint extracted via SNMPv2c.")
             
-            # Process Standard PTR Resolution Fallback
+            # process Standard PTR Resolution Fallback
             if resolved_name:
                 old_identity = self.network_map[target_ip].get("Identity", "")
                     
-                # Only override the Identity if we didn't just label it as a Domain Controller
+                # only override the Identity if we didn't just label it as a Domain Controller
                 if not old_identity or "Unknown" in old_identity or "Protocol" in old_identity:
                     self.network_map[target_ip]["Identity"] = f"DNS: {resolved_name}"
                     print(f"[*] Swarm Resolution Success: {target_ip} identified as '{resolved_name}' via inverse lookup.")
                     
-                # Append the reverse domain as an attribute regardless
+                # append the reverse domain as an attribute regardless
                 if "Attributes" not in self.network_map[target_ip]:
                     self.network_map[target_ip]["Attributes"] = {}
                 self.network_map[target_ip]["Attributes"]["reverse_dns"] = resolved_name
@@ -554,7 +537,7 @@ class RedPearl:
 
     def _extract_dns_hostname(self, payload):
         try:
-            # Safely resolve starting right after the 12-byte DNS header
+            # safely resolve starting right after the 12-byte DNS header
             hostname, _ = DefensiveParser.safe_resolve_dns_pointer(payload, initial_offset=12)
             return hostname if hostname else "Unknown"
         except ParsingError:
@@ -583,8 +566,8 @@ class RedPearl:
                     if parsed_url.query:
                         path += f"?{parsed_url.query}"
     
-                    # 1. Rigidly Normalized HTTP GET (Mimicking Windows UPnP Crawler)
-                    # Strict CRLF (\r\n) enforcement and native header ordering
+                    # 1. rigidly normalized HTTP GET (Mimicking Windows UPnP Crawler)
+                    # strict crlf (\r\n) enforcement and native header ordering
                     normalized_req = (
                         f"GET {path} HTTP/1.1\r\n"
                         f"Host: {host}:{port}\r\n"
@@ -594,7 +577,7 @@ class RedPearl:
                         f"\r\n"
                     ).encode('ascii')
     
-                    # 2. Dispatch via Raw Socket to avoid Python library fingerprints
+                    # 2. dispatch via raw socket to avoid python library fingerprints
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                         sock.settimeout(2.0)
                         sock.connect((host, port))
@@ -607,12 +590,12 @@ class RedPearl:
                                 break
                             response_data.extend(chunk)
     
-                    # 3. Extract the XML body from the HTTP response
+                    # 3. extract the XML body from the HTTP response
                     parts = response_data.split(b"\r\n\r\n", 1)
                     if len(parts) == 2:
                         xml_body = parts[1]
                         
-                        # 4. Safe XML Parsing (Defending against Honeypots)
+                        # 4. safe XML parsing (defending against honeypots)
                         parser = DET if HAS_DEFUSED else ET
                         root = parser.fromstring(xml_body)
                         
@@ -673,7 +656,6 @@ class RedPearl:
         except Exception: return None
 
     def _setup_multicast_socket(self, proto_name, mcast_grp, mcast_port):
-        """Initializes, configures, and binds standard dual-stack sockets."""
         is_ipv6 = ":" in mcast_grp
         sock = socket.socket(socket.AF_INET6 if is_ipv6 else socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             
@@ -683,7 +665,7 @@ class RedPearl:
             if os.getuid() != 0:
                 if self.debug:
                     sys.stderr.write(f"[*] Non-root: Pivoting {proto_name} from port {mcast_port} to ephemeral port.\n")
-                mcast_port = 0  # Kernel dynamically assigns an unprivileged port (>1024)
+                mcast_port = 0  # kernel dynamically assigns an unprivileged port (>1024)
                 is_ephemeral = True
     
         try:
@@ -693,7 +675,7 @@ class RedPearl:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
                 except Exception: pass
     
-            # Enable broadcast capabilities natively
+            # enable broadcast capabilities natively
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             except Exception: pass
@@ -705,7 +687,7 @@ class RedPearl:
                 else:
                     sock.bind(('::', mcast_port))
                     
-                # Only join multicast groups if we are not running on an ephemeral port
+                # only join multicast groups if we are not running on an ephemeral port
                 if not is_ephemeral:
                     if_idx = 0
                     if self.interface_ip and self.interface_ip not in ["0.0.0.0", "::"]:
@@ -720,13 +702,13 @@ class RedPearl:
                 else:
                     sock.bind(('0.0.0.0', mcast_port))
                     
-                # Only join multicast groups if we are not running on an ephemeral port
+                # only join multicast groups if we are not running on an ephemeral port
                 if not is_ephemeral:
                     bind_interface = self.interface_ip if ":" not in self.interface_ip else "0.0.0.0"
                     mreq = struct.pack("4s4s", socket.inet_aton(mcast_grp), socket.inet_aton(bind_interface))
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
     
-            # Keep a reference to the NetBIOS socket so the flare can broadcast out of it
+            # keep a reference to the NetBIOS socket so the flare can broadcast out of it
             if "netbios" in proto_name.lower():
                 self.netbios_sock = sock
     
@@ -743,7 +725,6 @@ class RedPearl:
             return None
 
     def _process_packet(self, data, addr, proto_name, proto_type):
-        """Processes collected socket buffers safely outside the main reading loop."""
         sender_ip = addr[0]
         if "%" in sender_ip:
             sender_ip = sender_ip.split("%")[0]
@@ -761,7 +742,7 @@ class RedPearl:
         elif proto_type == "wsd_advanced":
             wsd_result = self.wsd_engine.parse_wsd_payload(data, addr)
             if wsd_result and wsd_result.get("uuid"):
-                # Use the inferred OS as the primary identity
+                # use the inferred os as the primary identity
                 identity = f"{wsd_result['inferred_os']} [{wsd_result['event_type'][:5]}]"
 
                 device_attributes["uuid"] = wsd_result["uuid"][:18] + "..."
@@ -773,11 +754,11 @@ class RedPearl:
                     with self.lock:
                         if sender_ip not in self.coerced_targets:
                             self.coerced_targets.add(sender_ip)
-                            # Dispatch to the worker thread immediately to avoid blocking the network loop
+                            # dispatch to the worker thread asap to avoid blocking the network loop
                             self.executor.submit(self._execute_coercion_worker, sender_ip, wsd_result["uuid"])
 
                 if not self.passive_only:
-                    # Pass the wsd_result to trigger the HTTP WSDL inspection
+                    # pass the wsd_result to trigger the HTTP WSDL inspection
                     self.engagement_engine.route_engagement(wsd_result, sender_ip)
 
             else:
@@ -789,7 +770,7 @@ class RedPearl:
         if not identity or len(identity) < 2:
             identity = f"Unknown ({proto_name} Host)"
         
-        # Intercept and harvest mDNS attributes passively
+        # intercept and harvest mDNS attributes passively
         if proto_name.startswith("mDNS"):
             device_attributes = self._extract_mdns_txt_records(data)
         
@@ -811,13 +792,13 @@ class RedPearl:
                     "Attributes": device_attributes
                 }
                         
-                # Enrich identity using high-precision passive attributes if they exist
+                # enrich identity using high-precision passive attributes if they exist
                 if "model" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = f"Model: {device_attributes['model']}"
                 elif "fn" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = device_attributes["fn"]
                                         
-                # FIX: Removed the 'if self.baseline_map' check so alerts fire on clean slate runs too
+                # FIX: removed the 'if self.baseline_map' check so alerts fire on clean slate runs too
                 if sender_ip not in self.baseline_map:
                         logger.warning(f"\n[!] DISCOVERY ALERT: New host [{sender_ip}] linked up via {proto_name} ({vendor})")
                                             
@@ -829,7 +810,7 @@ class RedPearl:
                     self.network_map[sender_ip]["Attributes"] = {}
                 self.network_map[sender_ip]["Attributes"].update(device_attributes)
                         
-                # Keep enriching identities as new text data fields streams in over time
+                # keep enriching identities as new text data fields streams in over time
                 if "model" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = f"Model: {device_attributes['model']}"
                 elif "fn" in device_attributes:
@@ -849,10 +830,10 @@ class RedPearl:
 
             if self.egress_audit and sender_ip not in self.audited_hosts:
                 self.audited_hosts.add(sender_ip)
-                # Offloads safely to the  background pool; egress_lock manages the serial ordering
+                # offloads safely to the  background pool; egress_lock manages the serial ordering
                 self.executor.submit(self._run_egress_audit, sender_ip)
             
-            # 2. Dispatch Unprivileged Inverse DNS PTR Swarm Task
+            # 2. dispatch unprivileged inverse DNS PTR swarm task
             if self.reverse_dns_swarm and self.target_resolver:
                 with self.lock:
                     if sender_ip not in self.dns_dispatched:
@@ -875,12 +856,11 @@ class RedPearl:
                     self.engagement_engine.route_engagement(telemetry_event, sender_ip)
 
     def _async_packet_receiver(self, sock, proto_name, proto_type):
-        """Callback executed instantly by the event loop when data hits the socket kernel buffer."""
         try:
-            # Expand buffer size to 65535 to prevent packet truncation under heavy loads
+            # expand buffer size to 65535 to prevent packet truncation under heavy loads
             data, addr = sock.recvfrom(65535)
                 
-            # If active fetching is enabled, offload the processing to a separate thread
+            # if active fetching is enabled, offload the processing to a separate thread
             # to prevent blocking the core asyncio event loop.
             if not self.passive_only and proto_type == "http":
                 self.executor.submit(self._process_packet, data, addr, proto_name, proto_type)
@@ -892,8 +872,7 @@ class RedPearl:
                 sys.stderr.write(f"[-] Async kernel read failure inside {proto_name}: {e}\n")
     
     def _run_async_loop(self, socket_registry):
-        """Establishes a cross-platform event loop and registers low-level socket readers."""
-        # Windows compatibility adjustment: ProactorEventLoop doesn't support add_reader() on raw sockets
+        # windows compatibility adjustment: ProactorEventLoop doesn't support add_reader() on raw sockets
         if platform.system().lower() == "windows":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
                 
@@ -901,11 +880,11 @@ class RedPearl:
         asyncio.set_event_loop(loop)
     
         for sock, (proto_name, proto_type) in socket_registry.items():
-            # Configure socket to operate in non-blocking mode for the event loop
+            # configure socket to operate in non-blocking mode for the event loop
             sock.setblocking(False)
             loop.add_reader(sock, self._async_packet_receiver, sock, proto_name, proto_type)
     
-        # Run the loop forever inside its background execution thread
+        # run the loop forever inside its background execution thread
         try:
             loop.run_forever()
         except Exception as e:
@@ -916,7 +895,7 @@ class RedPearl:
         if not self.protocols: 
             return
                 
-        # Keep neighbor resolution tracking on its own periodic thread
+        # keep neighbor resolution tracking on its own periodic thread
         threading.Thread(target=self._neighbor_refresher, daemon=True).start()
 
         threading.Thread(target=self._verify_target_profiles, daemon=True).start()
@@ -925,7 +904,7 @@ class RedPearl:
 
         self.wsd_engine = WSDPassiveEngine(interface_ip=self.interface_ip, debug=self.debug)
         if hasattr(self.wsd_engine, 'sock') and self.wsd_engine.sock:
-            # Tag it as 'wsd_advanced' so the packet processor knows how to route it
+            # tag it as 'wsd_advanced' so the packet processor knows how to route it
             socket_registry[self.wsd_engine.sock] = ("WS-Discovery", "wsd_advanced")
             print(f"[*] Listening on [{self.wsd_engine.WSD_MCAST_GRP}]:{self.wsd_engine.WSD_PORT} for WS-Discovery (Advanced)...")
         
@@ -936,7 +915,7 @@ class RedPearl:
                 print(f"[*] Listening on [{details['mcast_grp']}]:{details['port']} for {name}...")
             
         if socket_registry:
-            # Spin up the high-performance event loop container inside a background thread
+            # spin up the high-performance event loop container inside a background thread
             threading.Thread(target=self._run_async_loop, args=(socket_registry,), daemon=True).start()
             time.sleep(0.5)
     
@@ -944,7 +923,7 @@ class RedPearl:
             self._fire_compliant_flare()
 
         if self.send_wsd_flare:
-            # Fire the active WS-Discovery flare through the sub-engine
+            # fire the active WS-Discovery flare through the sub-engine
             self.wsd_engine.send_probe_flare()
 
         if self.egress_audit:
@@ -966,13 +945,13 @@ class RedPearl:
             for ip, data in self.network_map.items():
                 obj_id = id(data)
                 if obj_id in seen_object_ids:
-                    continue  # Skip duplicate memory references to show one row per machine
+                    continue  # skip duplicate memory references to show one row per machine
                 seen_object_ids.add(obj_id)
                     
                 data_copy = data.copy()
                 data_copy["Protocols"] = list(data["Protocols"])
                     
-                # Format the dual-stack line layout
+                # format the dual-stack line layout
                 if "IPv4" in data and "IPv6" in data:
                     display_ip = f"{data['IPv4']} / {data['IPv6']}"
                 else:
@@ -982,7 +961,7 @@ class RedPearl:
                     
         def sort_key(entry_tuple):
             data = entry_tuple[1]
-            # Primary sort using IPv4 if available, fallback to IPv6 or string representation
+            # primary sort using IPv4 if available, fallback to IPv6 or string representation
             sort_target = data.get("IPv4") or data.get("IPv6") or entry_tuple[0]
             try:
                 if ":" in sort_target:
@@ -1025,8 +1004,6 @@ class RedPearl:
         except Exception: pass
         
 def show_boot_screen():
-    """Displays the initial ASCII art and console instructions."""
-    # Clearing screen based on OS
     os.system('cls' if os.name == 'nt' else 'clear')
         
     banner = """
@@ -1043,7 +1020,6 @@ def show_boot_screen():
     print("Example: scan --resolve-mac --send-flare\n")
     
 def run_scan(args):
-    """Executes the core RedPearl engine with the provided arguments."""
     logger = setup_logger(debug_mode=args.debug)
     
     if args.aess:
@@ -1051,7 +1027,7 @@ def run_scan(args):
     
     target_dns = args.resolver
     if args.reverse_swarm and not target_dns:
-        # Fallback estimation to standard local gateway defaults
+        # fallback estimation to standard local gateway defaults
         target_dns = "192.168.1.1" 
         if args.debug:
             sys.stderr.write(f"[*] No explicit resolver designated. Defaulting to standard gateway boundary target: {target_dns}\n")
@@ -1090,7 +1066,6 @@ def run_scan(args):
         mapper.save_state()
     
 if __name__ == "__main__":
-    # Standardize the argument parser so it can be reused inside the shell
     parser = argparse.ArgumentParser(description="RedPearl: Passive Dual-Stack Discovery", prog="scan")
     parser.add_argument("--interface", type=str, default="0.0.0.0", help="Local interface IP or system label name (e.g., eth0) to map bindings.")
     parser.add_argument("--xufetch", action="store_false", dest="passive_only", help="Break pure passivity to fetch active UPnP HTTP descriptions.")
@@ -1107,10 +1082,8 @@ if __name__ == "__main__":
     
     show_boot_screen()
     
-    # Interactive Console Loop
     while True:
         try:
-            # Capture user input
             cmd_line = input("\033[91mredpearl>\033[0m ").strip()
             if not cmd_line:
                 continue
@@ -1136,19 +1109,19 @@ if __name__ == "__main__":
     
             elif cmd == 'scan':
                 try:
-                    # Pass all arguments *after* the word 'scan' to argparse
+                    # pass all arguments *after* the word 'scan' to argparse
                     args = parser.parse_args(parts[1:])
                     run_scan(args)
                 except SystemExit:
-                    # Argparse automatically raises SystemExit when it hits -h/--help or encounters a bad argument.
-                    # Catching it prevents the entire interactive console from crashing.
+                    # argparse automatically raises SystemExit when it hits -h/--help or encounters a bad argument.
+                    # catching it prevents the entire interactive console from crashing.
                     continue
     
             else:
                 print(f"[-] Unknown command: '{cmd}'. Type 'help' for available commands.")
     
         except KeyboardInterrupt:
-            # Catching Ctrl+C at the main prompt so they don't accidentally kill the app
+            # Catching ctrl+c at the main prompt so they don't accidentally kill
             print("\n[*] Type 'exit' to quit the console.")
         except Exception as e:
             print(f"[-] Console Error: {e}")
