@@ -3,10 +3,6 @@ import os
 import re
 
 class FingerprintEngine:
-    """
-    An advanced heuristic engine for passive OS and device identification.
-    Uses protocol stacking and identity-string analysis.
-    """
 
     SIGNATURES = {
         "Apple": {
@@ -44,10 +40,6 @@ class FingerprintEngine:
 
     @classmethod
     def load_external_signatures(cls, filepath):
-        """
-        Appends user-defined signatures from a JSON file to the engine.
-        Format expected: {"Category": {"protocols": [], "strings": [], "vendors": []}}
-        """
         if not os.path.exists(filepath):
             print(f"[!] Signature file not found: {filepath}")
             return
@@ -58,12 +50,10 @@ class FingerprintEngine:
                 
             for category, rules in custom_data.items():
                 if category in cls.SIGNATURES:
-                    # Append to existing category
                     cls.SIGNATURES[category]["protocols"].update(set(rules.get("protocols", [])))
                     cls.SIGNATURES[category]["strings"].extend(rules.get("strings", []))
                     cls.SIGNATURES[category]["vendors"].extend(rules.get("vendors", []))
                 else:
-                    # Add new category
                     cls.SIGNATURES[category] = {
                         "protocols": set(rules.get("protocols", [])),
                         "strings": rules.get("strings", []),
@@ -81,13 +71,13 @@ class FingerprintEngine:
         identity = data.get('Identity', '').lower()
         vendor = data.get('Vendor', '').lower()
 
-        # FIX: Strip version suffixes (e.g. "_v4", "_v6") and normalize to upper case
+        # FIX: strip version suffixes (e.g. "_v4", "_v6") and normalize to upper case
         captured_protos = {p.upper() for p in data.get('Protocols', set())}
         
         scores = {category: 0 for category in cls.SIGNATURES}
 
         for category, rules in cls.SIGNATURES.items():
-            # Rule 1: Protocol Stacking 
+            # rule 1: protocol stacking 
             rule_protos = {rp.upper() for rp in rules["protocols"]}
 
             matching_protos = [
@@ -96,21 +86,21 @@ class FingerprintEngine:
             ]
             scores[category] += len(matching_protos) * 2
 
-            # Rule 2: Identity String Matching
+            # rule 2: id string matching
             if any(s in identity for s in rules["strings"]):
                 scores[category] += 5
 
-            # Rule 3: Vendor Matching
+            # rule 3: vendor matching
             if any(v.lower() in vendor for v in rules["vendors"]):
                 scores[category] += 3
 
-        # Return the category with the highest score
+        # return the category with the highest score
         best_fit = max(scores, key=scores.get)
         
         if scores[best_fit] == 0:
             return "Unknown System"
             
-        # Specific sub-classification logic
+        # specific sub-classification logic
         if best_fit == "Apple":
             if "iphone" in identity: return "Apple iOS (iPhone)"
             if "tv" in identity: return "Apple TV"
