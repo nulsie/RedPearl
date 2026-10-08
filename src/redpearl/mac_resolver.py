@@ -6,10 +6,6 @@ import logging
 logger = logging.getLogger("RedPearl")
 
 class NeighborCacheResolver:
-    """
-    A standalone helper to extract IPv4 (ARP) and IPv6 (NDP) neighbor tables.
-    Implements cascading fallbacks to ensure maximum compatibility across environments.
-    """
 
     @classmethod
     def get_mac_mapping(cls):
@@ -37,7 +33,7 @@ class NeighborCacheResolver:
     def _get_unix_ipv4(cls):
         cache = {}
         
-        # Fallback 1: Direct Kernel File Read (Fastest, no subprocess overhead)
+        # fallback 1: direct kernel file read (fastest, no subprocess overhead)
         if os.path.exists("/proc/net/arp"):
             try:
                 with open("/proc/net/arp", "r") as f:
@@ -49,7 +45,7 @@ class NeighborCacheResolver:
             except Exception as e:
                 logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
 
-        # Fallback 2: Modern IPRoute2
+        # fallback 2: modern IPRoute2
         try:
             out = subprocess.check_output(["ip", "neigh", "show"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for line in out.splitlines():
@@ -61,7 +57,7 @@ class NeighborCacheResolver:
         except Exception as e:
             logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
 
-        # Fallback 3: Legacy ARP Command
+        # fallback 3: legacy ARP command
         try:
             out = subprocess.check_output(["arp", "-an"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for ip, mac in re.findall(r"\((.*?)\)\s+at\s+([0-9a-fA-F:]+)", out):
@@ -75,7 +71,7 @@ class NeighborCacheResolver:
     def _get_unix_ipv6(cls):
         cache = {}
         
-        # Fallback 1: Modern IPRoute2
+        # fallback 1: modern IPRoute2
         try:
             out = subprocess.check_output(["ip", "-6", "neigh", "show"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for line in out.splitlines():
@@ -100,7 +96,7 @@ class NeighborCacheResolver:
     def _get_windows_ipv4(cls):
         cache = {}
         
-        # Fallback 1: Standard ARP utility
+        # fallback 1: standard ARP utility
         try:
             out = subprocess.check_output(["arp", "-a"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for ip, mac in re.findall(r"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+([0-9a-fA-F-]+)\s+", out):
@@ -109,7 +105,7 @@ class NeighborCacheResolver:
         except Exception as e:
             logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
 
-        # Fallback 2: PowerShell Get-NetNeighbor (Handles newer Windows environments)
+        # fallback 2: PowerShell Get-NetNeighbor (handles newer windows environments)
         try:
             cmd = "powershell -NoProfile -Command \"Get-NetNeighbor -AddressFamily IPv4 | Select-Object IPAddress, LinkLayerAddress\""
             out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode(errors='ignore')
@@ -126,7 +122,7 @@ class NeighborCacheResolver:
     def _get_windows_ipv6(cls):
         cache = {}
 
-        # Fallback 1: Standard Netsh
+        # fallback 1: standard netsh
         try:
             out = subprocess.check_output(["netsh", "interface", "ipv6", "show", "neighbors"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for ip, mac in re.findall(r"([0-9a-fA-F:]+)\s+([0-9a-fA-F-]+)\s+\w+", out):
@@ -136,7 +132,7 @@ class NeighborCacheResolver:
         except Exception as e:
             logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
 
-        # Fallback 2: PowerShell Get-NetNeighbor
+        # fallback 2: PowerShell Get-NetNeighbor
         try:
             cmd = "powershell -NoProfile -Command \"Get-NetNeighbor -AddressFamily IPv6 | Select-Object IPAddress, LinkLayerAddress\""
             out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode(errors='ignore')
