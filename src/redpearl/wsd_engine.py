@@ -4,8 +4,8 @@ import xml.etree.ElementTree as ET
 import uuid
 import logging
 logger = logging.getLogger("RedPearl")
-# Attempt to load defusedxml to block XXE and XML entity bombs safely.
-# Falls back to native ElementTree if the library is missing.
+# attempt to load defusedxml to block XXE and XML entity bombs safely.
+# falls back to native ElementTree if the library is missing.
 try:
     import defusedxml.ElementTree as DET
     HAS_DEFUSED = True
@@ -13,10 +13,6 @@ except ImportError:
     HAS_DEFUSED = False
 
 class WSDPassiveEngine:
-    """
-    Passively listens to WS-Discovery (UDP 3702) multicasts.
-    Extracts UUIDs, hardware Types, Scopes, XAddrs, and infers OS context.
-    """
     
     WSD_MCAST_GRP = '239.255.255.250'
     WSD_PORT = 3702
@@ -27,11 +23,7 @@ class WSDPassiveEngine:
         self.sock = self._setup_socket()
 
     def _build_normalized_wsd_probe(self, probe_uuid: str) -> bytes:
-        """
-        Constructs a rigidly normalized, minified WS-Discovery Probe envelope.
-        Prevents string-formatting artifacts from acting as IDS signatures.
-        """
-        # 1. Register Exact Namespaces to enforce strict prefixing
+        # 1. register exact namespaces to enforce strict prefixing
         namespaces = {
             "soap": "http://www.w3.org/2003/05/soap-envelope",
             "wsa": "http://www.w3.org/2005/08/addressing",
@@ -41,48 +33,44 @@ class WSDPassiveEngine:
         for prefix, uri in namespaces.items():
             ET.register_namespace(prefix, uri)
     
-        # 2. Programmatically build the XML Tree
+        # 2. programmatically build the XML Tree
         envelope = ET.Element("{http://www.w3.org/2003/05/soap-envelope}Envelope")
             
         header = ET.SubElement(envelope, "{http://www.w3.org/2003/05/soap-envelope}Header")
             
-        # Action
+        # action
         action = ET.SubElement(header, "{http://www.w3.org/2005/08/addressing}Action")
         action.text = "http://docs.oasis-open.org/ws-dd/ns/discovery/2009/01/Probe"
             
-        # MessageID
+        # messageID
         msg_id = ET.SubElement(header, "{http://www.w3.org/2005/08/addressing}MessageID")
         msg_id.text = f"urn:uuid:{probe_uuid}"
             
-        # To
+        # to
         to = ET.SubElement(header, "{http://www.w3.org/2005/08/addressing}To")
         to.text = "urn:docs-oasis-open-org:ws-dd:ns:discovery:2009:01"
     
-        # Body
+        # body
         body = ET.SubElement(envelope, "{http://www.w3.org/2003/05/soap-envelope}Body")
         probe = ET.SubElement(body, "{http://docs.oasis-open.org/ws-dd/ns/discovery/2009/01}Probe")
     
-        # 3. Serialize rigidly (minified, UTF-8, strict XML declaration)
+        # 3. serialize rigidly (minified, UTF-8, strict XML declaration)
         # short_empty_elements=True ensures <Probe /> instead of <Probe></Probe>
         xml_bytes = ET.tostring(envelope, encoding="utf-8", method="xml", short_empty_elements=True)
             
-        # Prepend the strict XML declaration (ET.tostring doesn't always add it exactly how Windows does)
+        # prepend the strict XML declaration (ET.tostring doesn't always add it exactly how Windows does)
         return b'<?xml version="1.0" encoding="utf-8"?>' + xml_bytes
 
     def send_probe_flare(self):
-        """
-        Transmits a standard, unprivileged wildcard WS-Discovery Probe payload 
-        to trigger active ProbeMatches responses from quiet Windows targets.
-        """
         probe_uuid = str(uuid.uuid4())
 
         soap_payload = self._build_normalized_wsd_probe(probe_uuid)
             
         try:
-            # Explicitly creating a clean, unprivileged outbound UDP socket 
+            # explicitly creating a clean, unprivileged outbound UDP socket 
             flare_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
                 
-            # Allow multi-hop routing locally if bound to a nested virtual network bridge
+            # allow multi-hop routing locally if bound to a nested virtual network bridge
             flare_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
                 
             if self.interface_ip != '0.0.0.0':
@@ -99,10 +87,6 @@ class WSDPassiveEngine:
                 print(f"[!] Warning: Failed to emit WS-Discovery flare: {e}", file=sys.stderr)
 
     def send_unicast_resolve(self, target_ip, target_uuid):
-        """
-        Transmits a targeted unicast WS-Discovery Resolve envelope directly to a host.
-        Blocks for a short timeout to catch the direct point-to-point ResolveMatches reply.
-        """
         import uuid
 
         probe_uuid = str(uuid.uuid4())
@@ -110,9 +94,9 @@ class WSDPassiveEngine:
         soap_payload = self._build_normalized_wsd_probe(probe_uuid)
     
         try:
-            # Establish a short-lived ephemeral UDP socket
+            # establish a short-lived ephemeral UDP socket
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.settimeout(2.5) # Dynamic boundary allowance for high latency links
+                sock.settimeout(2.5) # dynamic boundary allowance for high latency links
                     
                 if self.interface_ip and self.interface_ip != '0.0.0.0':
                     try:
@@ -123,10 +107,10 @@ class WSDPassiveEngine:
                 if self.debug:
                     print(f"[*] [Coercion Engine] Directing active unicast Resolve hook to {target_ip}:{self.WSD_PORT}")
                     
-                # Transmit explicitly to the target host's IP address
+                # transmit explicitly to the target host's IP address
                 sock.sendto(soap_payload, (target_ip, self.WSD_PORT))
                     
-                # Capture the exclusive unicast response directly on this thread
+                # capture the exclusive unicast response directly on this thread
                 data, addr = sock.recvfrom(65535)
                 return data, addr
                     
@@ -140,7 +124,6 @@ class WSDPassiveEngine:
         return None, None
 
     def _setup_socket(self):
-        """Binds to 3702. Naturally sudoless since port > 1024."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
@@ -152,18 +135,15 @@ class WSDPassiveEngine:
 
         sock.bind(('', self.WSD_PORT))
 
-        # Join the multicast group
+        # join the multicast group
         mreq = struct.pack("4s4s", socket.inet_aton(self.WSD_MCAST_GRP), socket.inet_aton(self.interface_ip))
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         sock.setblocking(False)
         return sock
 
     def parse_wsd_payload(self, raw_data, addr):
-        """
-        Parses the SOAP XML envelope securely using universal namespace wildcards.
-        """
         try:
-            # Secure parsing choice: defusedxml strictly blocks malicious expansion entities.
+            # secure parsing choice: defusedxml strictly blocks malicious expansion entities.
             if HAS_DEFUSED:
                 root = DET.fromstring(raw_data)
             else:
@@ -178,7 +158,7 @@ class WSDPassiveEngine:
                 "inferred_os": "Unknown"
             }
 
-            # 1. Determine Event Type using universal namespace wildcard ({*})
+            # 1. determine event type using universal namespace wildcard ({*})
             action_elem = root.find('.//{*}Action')
             if action_elem is not None and action_elem.text:
                 action = action_elem.text.lower()
@@ -186,23 +166,23 @@ class WSDPassiveEngine:
                 elif "bye" in action: telemetry["event_type"] = "Bye (Device Offline)"
                 elif "probe" in action: telemetry["event_type"] = "Probe (Active Searcher)"
 
-            # 2. Extract UUID via deep wildcard matching
+            # 2. extract UUID via deep wildcard matching
             address_elem = root.find('.//{*}EndpointReference/{*}Address')
             if address_elem is not None and address_elem.text:
                 telemetry["uuid"] = address_elem.text.replace("urn:uuid:", "")
 
-            # 3. Extract Hardware Categories (Types)
+            # 3. extract hardware categories (Types)
             types_elem = root.find('.//{*}Types')
             if types_elem is not None and types_elem.text:
                 telemetry["types"] = types_elem.text.split()
                 self._infer_os_from_types(telemetry)
 
-            # 4. Extract Service URLs (XAddrs)
+            # 4. extract service URLs (XAddrs)
             xaddrs_elem = root.find('.//{*}XAddrs')
             if xaddrs_elem is not None and xaddrs_elem.text:
                 telemetry["xaddrs"] = xaddrs_elem.text.split()
 
-            # 5. Extract Message ID for tracking duplicate multicasts
+            # 5. extract message id ffor tracking duplicate multicasts
             msg_id_elem = root.find('.//{*}MessageID')
             if msg_id_elem is not None:
                 telemetry["message_id"] = msg_id_elem.text
@@ -210,7 +190,7 @@ class WSDPassiveEngine:
             return telemetry
 
         except (ET.ParseError, ValueError, LookupError):
-            # Gracefully catches malformed structures, bad encodings, or invalid characters
+            # gracefully catches malformed structures, bad encodings, or invalid characters
             if self.debug: print(f"[-] Malformed or Malicious WS-D SOAP from {addr[0]}")
             return None
         except Exception as e:
@@ -218,9 +198,6 @@ class WSDPassiveEngine:
             return None
 
     def _infer_os_from_types(self, telemetry):
-        """
-        Uses heuristic stacking on WS-D 'Types' to infer the OS/Hardware context.
-        """
         types_str = " ".join(telemetry["types"]).lower()
         
         if "pub:computer" in types_str or "ms-wbt-server" in types_str:
@@ -231,7 +208,6 @@ class WSDPassiveEngine:
             telemetry["inferred_os"] = "Network Printer"
 
     def fileno(self):
-        """Exposes the socket file descriptor for the async event loop."""
         return self.sock.fileno()
 
 
