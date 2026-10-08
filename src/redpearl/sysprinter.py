@@ -65,9 +65,6 @@ class FingerprintEngine:
 
     @classmethod
     def identify(cls, data):
-        """
-        Calculates confidence scores for various OS/Device categories.
-        """
         identity = data.get('Identity', '').lower()
         vendor = data.get('Vendor', '').lower()
 

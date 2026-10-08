@@ -9,7 +9,6 @@ class NeighborCacheResolver:
 
     @classmethod
     def get_mac_mapping(cls):
-        """Returns a unified dictionary mapping IP addresses to MAC addresses."""
         cache = {}
         os_type = platform.system().lower()
 
