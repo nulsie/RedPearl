@@ -124,7 +124,6 @@ class RedPearl:
             return {}
 
     def _poke_ip(self, target_ip):
-        """Forces the OS to trigger an ARP or NDP request via dummy UDP transmission with randomized jitter."""
         try:
             # use mdns (5353) to blend into normal discovery traffic
             target_port = 5353 
@@ -183,7 +182,6 @@ class RedPearl:
                     sys.stderr.write(f"[-] Targeted Egress Auditor runtime error for {target_ip}: {e}\n")
 
     def _execute_coercion_worker(self, target_ip, target_uuid):
-        """Asynchronous worker container handled by the REdPearl pool."""
         if self.debug:
             sys.stderr.write(f"[*] [Worker] Initiating coercion handshake sequence for {target_ip}\n")
                 
