@@ -512,7 +512,7 @@ class RedPearl:
     def _load_or_fetch_oui(self):
         cache_file = "mac_vendors.json"
         txt_source = "oui.txt"
-        ieee_url = "http://standards-oui.ieee.org/oui/oui.txt"
+        ieee_url = "https://standards-oui.ieee.org/oui/oui.txt"
      
         # 1. try loading the pre-compiled JSON cache first
         if os.path.exists(cache_file):
