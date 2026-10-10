@@ -123,24 +123,26 @@ class RedPearl:
             logger.debug(f"[!] Error loading config: {e}\n")
             return {}
 
+    # now refactored for the new(v1.1.0) rate shaping  thing
     def _poke_ip(self, target_ip):
         try:
-            # use mdns (5353) to blend into normal discovery traffic
             target_port = 5353 
             payload = b'\x00'
-                
+                    
             if ":" in target_ip:
                 poke_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
             else:
                 poke_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    
+                        
             for _ in range(3):
+                # put token-bucket pacing before sending
+                self.stealth_engine.pace_action(congestion_feedback=False)
                 poke_sock.sendto(payload, (target_ip, target_port))
-
-                delay = self.stealth_engine.get_poisson_delay(target_average=0.25)
-                time.sleep(delay)
-                    
+                        
             poke_sock.close()
+        except (socket.timeout, OSError):
+            # feed congestion notification back to the rate-shaper to back off safely
+            self.stealth_engine.pace_action(congestion_feedback=True)
         except Exception as e:
             logger.debug(f"[-] Poke failed for {target_ip}: {e}\n")
 
@@ -429,21 +431,18 @@ class RedPearl:
             time.sleep(5)
 
     def _execute_ptr_lookup_worker(self, target_ip):
-            
         # 1. unprivileged CLDAP active directory profiling
         cldap_data = self.dns_engine.query_cldap(target_ip)
-
-        time.sleep(self.stealth_engine.get_poisson_delay(0.8)) 
-
+        self.stealth_engine.pace_action(congestion_feedback=False)
+    
         snmp_desc = ""
-        # cycle through standard enterprise defaults
         for comm in ["public", "private", "internal"]:
             snmp_desc = self.dns_engine.query_snmp(target_ip, community=comm)
             if snmp_desc:
-                break # stop iterating once we get a valid hardware footprint
-            time.sleep(self.stealth_engine.get_poisson_delay(0.5))
-
-        time.sleep(self.stealth_engine.get_poisson_delay(0.8))
+                break 
+            self.stealth_engine.pace_action(congestion_feedback=False)
+    
+        self.stealth_engine.pace_action(congestion_feedback=False)
 
         # 2. traditional inverse DNS PTR Swarm against gateway
         resolved_name = None
