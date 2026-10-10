@@ -508,24 +508,53 @@ class RedPearl:
                 if self.debug and not cldap_data.get("is_dc"):
                     print(f"[*] Swarm Attribute Enriched: {target_ip} linked to record '{resolved_name}'")
 
+    # updated from the old local file hardcoding to now extracting  them from their own sites aources.
     def _load_or_fetch_oui(self):
-        txt_source = "oui.txt"
         cache_file = "mac_vendors.json"
+        txt_source = "oui.txt"
+        ieee_url = "http://standards-oui.ieee.org/oui/oui.txt"
+     
+        # 1. try loading the pre-compiled JSON cache first
         if os.path.exists(cache_file):
             try:
-                with open(cache_file, 'r') as f: return json.load(f)
-            except Exception: pass
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass  # fall through to re-download/re-parse if corrupted
+     
+        # 2. download the ieee text file if not available locally
+        if not os.path.exists(txt_source):
+            print(f"[*] Local OUI database missing. Downloading from {ieee_url} (this may take a moment)...")
+            try:
+                # use a std User-Agent to prevent basic HTTP rejections
+                req = urllib.request.Request(ieee_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    with open(txt_source, 'wb') as out_file:
+                        out_file.write(response.read())
+            except Exception as e:
+                print(f"[-] Automated OUI download failed: {e}")
+     
+        # 3. parse the text file and compile the JSON cache
         oui_dict = {}
         if os.path.exists(txt_source):
             try:
                 with open(txt_source, 'r', encoding='utf-8', errors='ignore') as f:
                     for line in f:
                         if "(hex)" in line:
+                            # extract lines formatted like: "00-00-00   (hex)   XEROX CORPORATION"
                             parts = line.split("(hex)")
-                            oui_dict[parts[0].strip().replace("-", "").upper()] = parts[1].strip()
-                with open(cache_file, 'w') as f: json.dump(oui_dict, f)
+                            mac_prefix = parts[0].strip().replace("-", "").upper()
+                            vendor_name = parts[1].strip()
+                            oui_dict[mac_prefix] = vendor_name
+                     
+                # save out to JSON for instant loads on subsequent runs
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(oui_dict, f, indent=4)
+                     
                 return oui_dict
-            except Exception: pass
+            except Exception as e:
+                print(f"[-] OUI parsing failed: {e}")
+     
         return {"B827EB": "Raspberry Pi Foundation"} 
 
     def get_vendor(self, mac):
