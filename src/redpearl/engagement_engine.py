@@ -53,13 +53,11 @@ class ReactiveEngagementEngine:
 
     async def _stealth_tls_dispatch(self, target_ip):
         for port in [443, 8443, 3389, 636]:
-            # fire the individual probe
             await self._engage_tls_harvesting_async(target_ip, port)
-                
-            # apply the mathematically sound poisson delay between probes
+                    
+            # Replace old delay logic with enterprise adaptive pacing
             if self.stealth:
-                delay = self.stealth.get_poisson_delay(target_average=1.2)
-                await asyncio.sleep(delay)
+                await self.stealth.pace_action_async(congestion_feedback=False)
 
     async def _engage_tls_harvesting_async(self, target_ip, port):
         try:

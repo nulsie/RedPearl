@@ -59,24 +59,22 @@ class EgressAuditor:
                 
         return result
 
+    # refactored for v1.1.0 jitter rate shaping
     async def run(self, custom_ports: List[int] = None, target_average_delay: float = 0.2) -> List[Dict[str, Any]]:
         ports_to_scan = custom_ports if custom_ports else self.default_ports
         completed_tasks = []
         sem = asyncio.Semaphore(self.max_concurrency)
-                
-        for port in ports_to_scan: # FIX: changed 'ports' to 'ports_to_scan'
-            # now this will successfully pull from stealth_engine.py
+                    
+        for port in ports_to_scan:
             destination_ip = self.stealth.resolve_egress_target(port)
-    
-            # FIX: pass the resolved destination_ip to test_port
+        
             task = asyncio.create_task(self.test_port(port, destination_ip, sem))
             completed_tasks.append(task)
-                    
-            if target_average_delay > 0:
-                # Now the Poisson math will actually calculate the delay
-                entropy_sleep = self.stealth.get_poisson_delay(target_average_delay)
-                await asyncio.sleep(entropy_sleep)
                         
+            if target_average_delay > 0:
+                # use the new async-safe enterprise rate shaper
+                await self.stealth.pace_action_async(congestion_feedback=False)
+                            
         return await asyncio.gather(*completed_tasks)
 
 # --- framework integration / standalone execution ---
