@@ -1085,7 +1085,7 @@ def show_boot_screen():
     |   / -_) _` |  _/ -_) _` | '_| |
     |_|_\___\__,_|_| \___\__,_|_| |_|
         
-    [ RedPearl v1.0.0 ]
+    [ RedPearl v1.1.0 ]
     [ Sudoless Passive-Aggressive Network Scalpel ]
     """
     print(banner)
@@ -1196,7 +1196,7 @@ if __name__ == "__main__":
                 print(f"[-] Unknown command: '{cmd}'. Type 'help' for available commands.")
     
         except KeyboardInterrupt:
-            # Catching ctrl+c at the main prompt so they don't accidentally kill
+            # catching ctrl+c at the main prompt so they don't accidentally kill
             print("\n[*] Type 'exit' to quit the console.")
         except Exception as e:
             print(f"[-] Console Error: {e}")
