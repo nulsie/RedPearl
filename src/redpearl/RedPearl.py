@@ -37,6 +37,7 @@ from engagement_engine import ReactiveEngagementEngine
 from egress_auditor import EgressAuditor
 from defensive_parser import DefensiveParser, ParsingError
 from stealth_engine import StealthProfileEngine
+from state_db import RedPearlStateDB # v1.1.0 add(or perhaps change): migrates the state management to a sqlite backend with WAL
 
 logger = logging.getLogger("RedPearl")
 
@@ -90,7 +91,8 @@ class RedPearl:
         self.neighbor_cache = self._build_neighbor_cache()
         self.protocols = self._load_config(config_file)
 
-        self.network_map = self._load_state()
+        self.state_db = RedPearlStateDB()
+        self.network_map = self._load_state()  # this will now pull from sqlite
         self.baseline_map = copy.deepcopy(self.network_map)
         self.netbios_sock = None
         self.telemetry_engine = MDNSTelemetryEngine()
@@ -885,6 +887,8 @@ class RedPearl:
                     self.network_map[sender_ip]["Identity"] = identity
     
             self._correlate_dual_stack()
+
+            self.state_db.upsert_host(sender_ip, self.network_map[sender_ip])
     
             if self.egress_audit and sender_ip not in self.audited_hosts and not is_suppressed_infra:
                 self.audited_hosts.add(sender_ip)
@@ -1037,27 +1041,27 @@ class RedPearl:
                 print(f"    └─ TXT Records: {attr_str[:120]}")
         print("="*145)
 
-    def _load_state(self, filepath="network_state.json"):
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-                    for ip, details in data.items():
-                        if isinstance(details.get("Protocols"), list):
-                            details["Protocols"] = set(details["Protocols"])
-                    return data
-            except Exception: pass
-        return {}
-    
-    def save_state(self, filepath="network_state.json"):
+    # (v1.1.0) change: refactored _load_state and save_state which now uses sqlite for state keeping
+    def _load_state(self, filepath=None):
+        # pulls the state directly from sqlite wal database
         try:
-            export_data = {}
+            return self.state_db.load_state_dict()
+        except Exception as e:
+            if self.debug:
+                sys.stderr.write(f"[-] SQLite state load error: {e}\n")
+            return {}
+    
+    def save_state(self, filepath=None):
+        # persists current memory map back into sqlite
+        try:
             with self.lock:
                 for ip, details in self.network_map.items():
-                    export_data[ip] = details.copy()
-                    export_data[ip]["Protocols"] = list(details["Protocols"])
-            with open(filepath, 'w') as f: json.dump(export_data, f, indent=4)
-        except Exception: pass
+                    self.state_db.upsert_host(ip, details)
+            if self.debug:
+                sys.stderr.write("[*] Enterprise state successfully flushed to SQLite backend.\n")
+        except Exception as e:
+            if self.debug:
+                sys.stderr.write(f"[-] SQLite state save error: {e}\n")
 
     # (v1.1.0) add: the helper method for the deception circuit breaker
     def _is_blacklisted(self, target_ip: str) -> bool:
