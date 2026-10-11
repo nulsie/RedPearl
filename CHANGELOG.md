@@ -10,6 +10,8 @@ changelog for RedPearl
 
 - Subnet Partitioning & OUI Pruning(`pruner`)
 
+- The Deception Circuit Breaker in (`RedPearl`)
+
 ### Fixed
 
 - None(for now)
