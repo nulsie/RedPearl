@@ -16,7 +16,9 @@ changelog for RedPearl
 
 ### Fixed
 
-- None(for now)
+- Correcting Misleading Log Messages (`wsd_engine`)
+
+- Tightening Exception Context in Neighbor Resolver (`mac_resolver`)
 
 ### Changed
 
