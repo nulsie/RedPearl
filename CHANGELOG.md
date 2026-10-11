@@ -12,6 +12,8 @@ changelog for RedPearl
 
 - The Deception Circuit Breaker in (`RedPearl`)
 
+- Thread-Safe SQLite Backend with WAL (Write-Ahead Logging) Mode for State Management(`state_db`)
+
 ### Fixed
 
 - None(for now)
