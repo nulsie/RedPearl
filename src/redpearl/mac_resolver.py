@@ -28,11 +28,12 @@ class NeighborCacheResolver:
     # UNIX / LINUX FALLBACKS
     # ==========================================
 
+    # (v1.1.0) fix: better exception log handling
     @classmethod
     def _get_unix_ipv4(cls):
         cache = {}
-        
-        # fallback 1: direct kernel file read (fastest, no subprocess overhead)
+            
+        # 1. direct kernel file read
         if os.path.exists("/proc/net/arp"):
             try:
                 with open("/proc/net/arp", "r") as f:
@@ -40,11 +41,12 @@ class NeighborCacheResolver:
                         parts = line.split()
                         if len(parts) >= 4 and parts[3] != "00:00:00:00:00:00":
                             cache[parts[0]] = parts[3].lower()
-                if cache: return cache
+                if cache: 
+                    return cache
             except Exception as e:
-                logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
-
-        # fallback 2: modern IPRoute2
+                logger.debug(f"Failed to read /proc/net/arp: {e}", exc_info=True)
+    
+        # 2. modern iproute2
         try:
             out = subprocess.check_output(["ip", "neigh", "show"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for line in out.splitlines():
@@ -52,18 +54,19 @@ class NeighborCacheResolver:
                 if len(parts) >= 5 and "lladdr" in parts:
                     idx = parts.index("lladdr")
                     cache[parts[0]] = parts[idx + 1].lower()
-            if cache: return cache
-        except Exception as e:
-            logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
-
-        # fallback 3: legacy ARP command
+            if cache: 
+                return cache
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.debug(f"IPRoute2 neighbor lookup failed: {e}", exc_info=True)
+    
+        # 3. legacy arp command
         try:
             out = subprocess.check_output(["arp", "-an"], stderr=subprocess.DEVNULL).decode(errors='ignore')
             for ip, mac in re.findall(r"\((.*?)\)\s+at\s+([0-9a-fA-F:]+)", out):
                 cache[ip] = mac.lower()
-        except Exception as e:
-            logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
-
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.debug(f"Legacy ARP command failed: {e}", exc_info=True)
+    
         return cache
 
     @classmethod
