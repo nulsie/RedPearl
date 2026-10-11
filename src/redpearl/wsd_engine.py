@@ -102,7 +102,8 @@ class WSDPassiveEngine:
                     try:
                         sock.bind((self.interface_ip, 0))
                     except Exception as e:
-                        logger.debug(f"Subprocess fallback failed: {e}", exc_info=True)
+                        # (v1.1.0) fix: corrected log message from sum subprocess to socket bind error
+                        logger.debug(f"Socket bind failed during unicast resolve: {e}", exc_info=True)
                     
                 if self.debug:
                     print(f"[*] [Coercion Engine] Directing active unicast Resolve hook to {target_ip}:{self.WSD_PORT}")
