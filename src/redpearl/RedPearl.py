@@ -66,7 +66,7 @@ def setup_logger(debug_mode=False):
     return logger
 
 class RedPearl:
-    def __init__(self, config_file="protocols.json", passive_only=True, active_mac_resolve=False, interface_ip="0.0.0.0", debug=False, send_flare=False, send_wsd_flare=False, reverse_dns_swarm=False, target_resolver=False, egress_audit=False, egress_target="1.1.1.1", egress_ports=None):
+    def __init__(self, config_file="protocols.json", passive_only=True, active_mac_resolve=False, interface_ip="0.0.0.0", debug=False, send_flare=False, send_wsd_flare=False, reverse_dns_swarm=False, target_resolver=False, egress_audit=False, egress_target="1.1.1.1", egress_ports=None, disable_circuit_breaker=False):
         self.network_map = {}
         self.lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="REdPearlWorker")
@@ -103,6 +103,9 @@ class RedPearl:
         self.dns_dispatched = set()
         self.coerced_targets = set()
         self.pruner = OUIPruner()
+        self.disable_circuit_breaker = disable_circuit_breaker
+        self.blacklisted_targets = set()  # tracks blacklisted IPs and subnet wildcards
+        self.circuit_breaker_lock = threading.Lock()
         self.engagement_engine = ReactiveEngagementEngine(
             executor=self.executor, 
             debug=self.debug,
@@ -127,6 +130,10 @@ class RedPearl:
 
     # now refactored for the new(v1.1.0) rate shaping  thing
     def _poke_ip(self, target_ip):
+        if self._is_blacklisted(target_ip):
+            if self.debug:
+                sys.stderr.write(f"[*] [Circuit Breaker] Aborting active poke for blacklisted target: {target_ip}\n")
+            return
         try:
             target_port = 5353 
             payload = b'\x00'
@@ -149,6 +156,10 @@ class RedPearl:
             logger.debug(f"[-] Poke failed for {target_ip}: {e}\n")
 
     def _run_egress_audit(self, target_ip):
+        if self._is_blacklisted(target_ip):
+            if self.debug:
+                sys.stderr.write(f"[*] [Circuit Breaker] Aborting egress audit for blacklisted target: {target_ip}\n")
+            return
         # use a mutual exclusion lock to guarantee only one host undergoes auditing at a time
         with self.egress_lock:
             if self.debug:
@@ -186,6 +197,10 @@ class RedPearl:
                     sys.stderr.write(f"[-] Targeted Egress Auditor runtime error for {target_ip}: {e}\n")
 
     def _execute_coercion_worker(self, target_ip, target_uuid):
+        if self._is_blacklisted(target_ip):
+            if self.debug:
+                sys.stderr.write(f"[*] [Circuit Breaker] Aborting coercion handshake for blacklisted target: {target_ip}\n")
+            return
         if self.debug:
             sys.stderr.write(f"[*] [Worker] Initiating coercion handshake sequence for {target_ip}\n")
                 
@@ -360,6 +375,15 @@ class RedPearl:
                             # if the signature swings wildly 
                             # under the exact same MAC, it's a strong indicator of a honeypot script spinning up.
                             print(f"    └─ ALERT: Static MAC footprint with morphing signatures. Possible deception/honeypot segment.")
+
+                            if not self.disable_circuit_breaker:
+                                with self.circuit_breaker_lock:
+                                    # blacklist the host and quarantine its /24 subnet segment
+                                    self.blacklisted_targets.add(ip)
+                                    subnet_segment = ".".join(ip.split(".")[:3]) + ".*"
+                                    self.blacklisted_targets.add(subnet_segment)
+                                                            
+                                print(f"    └─ CIRCUIT BREAKER ENGAGED: Automatically quarantined target {ip} and subnet {subnet_segment} from active engagement.")
                                 
                         # sync the baseline to keep tracking transitions linearly
                         self.baseline_map[ip] = copy.deepcopy(current_data)
@@ -433,6 +457,10 @@ class RedPearl:
             time.sleep(5)
 
     def _execute_ptr_lookup_worker(self, target_ip):
+        if self._is_blacklisted(target_ip):
+            if self.debug:
+                sys.stderr.write(f"[*] [Circuit Breaker] Aborting PTR/CLDAP/SNMP lookup for blacklisted target: {target_ip}\n")
+            return
         # 1. unprivileged CLDAP active directory profiling
         cldap_data = self.dns_engine.query_cldap(target_ip)
         self.stealth_engine.pace_action(congestion_feedback=False)
@@ -474,7 +502,7 @@ class RedPearl:
                 if len(indicators) > 2:
                     self.network_map[target_ip]["Attributes"]["ad_site"] = indicators[-1]
                         
-                print(f"\n[!] ENTERPRISE ASSET: {target_ip} identified as Active Directory Domain Controller.")
+                print(f"\n[!] ASSET: {target_ip} identified as Active Directory Domain Controller.")
 
             elif snmp_desc:
                 old_identity = self.network_map[target_ip].get("Identity", "")
@@ -1029,6 +1057,22 @@ class RedPearl:
                     export_data[ip]["Protocols"] = list(details["Protocols"])
             with open(filepath, 'w') as f: json.dump(export_data, f, indent=4)
         except Exception: pass
+
+    def _is_blacklisted(self, target_ip: str) -> bool:
+        if self.disable_circuit_breaker:
+            return False
+            
+        with self.circuit_breaker_lock:
+            if target_ip in self.blacklisted_targets:
+                return True
+                
+            # check if the /24 subnet has been circuit-broken
+            if "." in target_ip:
+                subnet_prefix = ".".join(target_ip.split(".")[:3]) + ".*"
+                if subnet_prefix in self.blacklisted_targets:
+                    return True
+                    
+        return False
         
 def show_boot_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -1078,7 +1122,8 @@ def run_scan(args):
         target_resolver=target_dns,
         egress_audit=args.egraud,
         egress_target=args.egraud_target,
-        egress_ports=custom_egress_ports
+        egress_ports=custom_egress_ports,
+        disable_circuit_breaker=args.no_circuit_breaker
     ) 
         
     mapper.start_listeners()
@@ -1106,6 +1151,7 @@ if __name__ == "__main__":
     parser.add_argument("--egraud", action="store_true", help="Launch the async outbound firewall egress path security auditor.")
     parser.add_argument("--egraud-target", type=str, default="1.1.1.1", help="External public destination IP used for egress mapping.")
     parser.add_argument("--egraud-ports", type=str, help="Comma-separated custom TCP ports to validate (e.g., 22,53,443,9001).")
+    parser.add_argument("--no-circuit-breaker", action="store_true", help="Disable the Deception Circuit Breaker and honeypot blacklist guardrails.")
     
     show_boot_screen()
     
