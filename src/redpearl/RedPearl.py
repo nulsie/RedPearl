@@ -26,6 +26,7 @@ except ImportError:
 import argparse
 import copy
 import asyncio
+from pruner import OUIPruner # v1.1.0 add: for the whitelist and pruning thing
 from sysprinter import FingerprintEngine
 from mac_resolver import NeighborCacheResolver
 from concurrent.futures import ThreadPoolExecutor
@@ -101,6 +102,7 @@ class RedPearl:
         self.dns_engine = ReverseDNSSwarmEngine()
         self.dns_dispatched = set()
         self.coerced_targets = set()
+        self.pruner = OUIPruner()
         self.engagement_engine = ReactiveEngagementEngine(
             executor=self.executor, 
             debug=self.debug,
@@ -757,61 +759,62 @@ class RedPearl:
         sender_ip = addr[0]
         if "%" in sender_ip:
             sender_ip = sender_ip.split("%")[0]
-        
+            
         if sender_ip.startswith("127.") or sender_ip == "::1":
-            return
-
+                return
+    
         device_attributes = {}
-        
+            
         if proto_type == "dns": identity = self._extract_dns_hostname(data)
         elif proto_type == "http": identity = self._extract_ssdp_info(data)
         elif proto_type == "netbios": identity = self._extract_netbios_name(data)
         elif proto_type == "json": identity = self._extract_json_info(data)
-
+    
         elif proto_type == "wsd_advanced":
             wsd_result = self.wsd_engine.parse_wsd_payload(data, addr)
             if wsd_result and wsd_result.get("uuid"):
-                # use the inferred os as the primary identity
                 identity = f"{wsd_result['inferred_os']} [{wsd_result['event_type'][:5]}]"
-
                 device_attributes["uuid"] = wsd_result["uuid"][:18] + "..."
-                        
+                            
                 if wsd_result["xaddrs"]:
                     device_attributes["url"] = wsd_result["xaddrs"][0][:25] 
-
+    
                 if not self.passive_only and "Hello" in wsd_result["event_type"]:
                     with self.lock:
                         if sender_ip not in self.coerced_targets:
                             self.coerced_targets.add(sender_ip)
-                            # dispatch to the worker thread asap to avoid blocking the network loop
                             self.executor.submit(self._execute_coercion_worker, sender_ip, wsd_result["uuid"])
-
+    
                 if not self.passive_only:
-                    # pass the wsd_result to trigger the HTTP WSDL inspection
                     self.engagement_engine.route_engagement(wsd_result, sender_ip)
-
             else:
                 identity = "WS-Discovery Device"
-                
-        elif proto_type == "soap": identity = self._extract_wsd_info(data) # Legacy fallback
+                    
+        elif proto_type == "soap": identity = self._extract_wsd_info(data)
         else: identity = f"Unknown Protocol ({proto_type})"
-                
+                    
         if not identity or len(identity) < 2:
             identity = f"Unknown ({proto_name} Host)"
-        
-        # intercept and harvest mDNS attributes passively
+            
         if proto_name.startswith("mDNS"):
             device_attributes = self._extract_mdns_txt_records(data)
-        
+            
         with self.lock:
+            # (v1.1.0)add: determine mac and vendor safely beforehand so suppression can be checked globally
+            mac_addr = self.neighbor_cache.get(sender_ip, "Unknown MAC")
+            if mac_addr == "Unknown MAC" and self.active_mac_resolve and sender_ip not in self.network_map:
+                self.executor.submit(self._poke_ip, sender_ip)
+                
+            if sender_ip in self.network_map:
+                vendor = self.network_map[sender_ip].get("Vendor", "Unknown Vendor")
+            else:
+                vendor = self.get_vendor(mac_addr)
+    
+            is_suppressed_infra = self.pruner.should_suppress_active_recon(vendor)
+            if is_suppressed_infra and self.debug:
+                sys.stderr.write(f"[*] [Pruner] Suppressing active tasks for enterprise infrastructure asset: {sender_ip} ({vendor})\n")
+    
             if sender_ip not in self.network_map:
-                mac_addr = self.neighbor_cache.get(sender_ip, "Unknown MAC")
-        
-                if mac_addr == "Unknown MAC" and self.active_mac_resolve:
-                    self.executor.submit(self._poke_ip, sender_ip)
-        
-                vendor = self.get_vendor(mac_addr) 
-                                                        
                 self.network_map[sender_ip] = {
                     "Identity": identity,
                     "MAC": mac_addr,
@@ -820,67 +823,62 @@ class RedPearl:
                     "Queries": 1,
                     "Attributes": device_attributes
                 }
-                        
-                # enrich identity using high-precision passive attributes if they exist
+                            
                 if "model" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = f"Model: {device_attributes['model']}"
                 elif "fn" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = device_attributes["fn"]
-                                        
-                # FIX: removed the 'if self.baseline_map' check so alerts fire on clean slate runs too
-                if sender_ip not in self.baseline_map:
-                        logger.warning(f"\n[!] DISCOVERY ALERT: New host [{sender_ip}] linked up via {proto_name} ({vendor})")
                                             
+                if sender_ip not in self.baseline_map:
+                    logger.warning(f"\n[!] DISCOVERY ALERT: New host [{sender_ip}] linked up via {proto_name} ({vendor})")
+                                                
             else:
                 self.network_map[sender_ip]["Queries"] += 1
                 self.network_map[sender_ip]["Protocols"].add(proto_name)
-                        
+                            
                 if "Attributes" not in self.network_map[sender_ip]:
                     self.network_map[sender_ip]["Attributes"] = {}
                 self.network_map[sender_ip]["Attributes"].update(device_attributes)
-                        
-                # keep enriching identities as new text data fields streams in over time
+                            
                 if "model" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = f"Model: {device_attributes['model']}"
                 elif "fn" in device_attributes:
                     self.network_map[sender_ip]["Identity"] = device_attributes["fn"]
-                                        
+                                            
                 if self.network_map[sender_ip]["MAC"] == "Unknown MAC":
                     new_mac = self.neighbor_cache.get(sender_ip, "Unknown MAC")
                     if new_mac != "Unknown MAC":
                         self.network_map[sender_ip]["MAC"] = new_mac
                         self.network_map[sender_ip]["Vendor"] = self.get_vendor(new_mac)
-                                
+                                    
                 old_identity = self.network_map[sender_ip]["Identity"]
                 if "Unknown" in old_identity and "Unknown" not in identity:
                     self.network_map[sender_ip]["Identity"] = identity
-
+    
             self._correlate_dual_stack()
-
-            if self.egress_audit and sender_ip not in self.audited_hosts:
+    
+            if self.egress_audit and sender_ip not in self.audited_hosts and not is_suppressed_infra:
                 self.audited_hosts.add(sender_ip)
-                # offloads safely to the  background pool; egress_lock manages the serial ordering
                 self.executor.submit(self._run_egress_audit, sender_ip)
-            
-            # 2. dispatch unprivileged inverse DNS PTR swarm task
-            if self.reverse_dns_swarm and self.target_resolver:
+                
+            if self.reverse_dns_swarm and self.target_resolver and not is_suppressed_infra:
                 with self.lock:
                     if sender_ip not in self.dns_dispatched:
                         self.dns_dispatched.add(sender_ip)
                         self.executor.submit(self._execute_ptr_lookup_worker, sender_ip)
-
+    
             if proto_name.startswith("mDNS") and device_attributes:
                 telemetry_event = self.telemetry_engine.update_and_check_transitions(sender_ip, device_attributes)
                 if telemetry_event:
                     self.network_map[sender_ip]["State"] = telemetry_event["to_state"]
                     self.network_map[sender_ip]["TelemetryFlags"] = telemetry_event["flags"]
                     self.network_map[sender_ip]["TelemetryProtocol"] = telemetry_event["protocol"]
-                     
+                         
                     if telemetry_event["event"] == "STATE_TRANSITION":
                         print(f"\n[⇄] TELEMETRY TRANSITION: [{sender_ip}] ({telemetry_event['device']}) changed state: {telemetry_event['from_state']} ➔ {telemetry_event['to_state']}")
                     elif telemetry_event["event"] == "INITIAL_DISCOVERY":
                         print(f"\n[+] TELEMETRY DISCOVERY: [{sender_ip}] ({telemetry_event['device']}) initial state: {telemetry_event['to_state']}")        
-
+    
                 if not self.passive_only:
                     self.engagement_engine.route_engagement(telemetry_event, sender_ip)
 
