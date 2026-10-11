@@ -104,7 +104,7 @@ class RedPearl:
         self.coerced_targets = set()
         self.pruner = OUIPruner()
         self.disable_circuit_breaker = disable_circuit_breaker
-        self.blacklisted_targets = set()  # tracks blacklisted IPs and subnet wildcards
+        self.blacklisted_targets = set()  # (v1.1.0): the deception circuit breaker: tracks blacklisted IPs and subnet wildcards
         self.circuit_breaker_lock = threading.Lock()
         self.engagement_engine = ReactiveEngagementEngine(
             executor=self.executor, 
@@ -376,6 +376,7 @@ class RedPearl:
                             # under the exact same MAC, it's a strong indicator of a honeypot script spinning up.
                             print(f"    └─ ALERT: Static MAC footprint with morphing signatures. Possible deception/honeypot segment.")
 
+                            # the trigger for the circuit breaker
                             if not self.disable_circuit_breaker:
                                 with self.circuit_breaker_lock:
                                     # blacklist the host and quarantine its /24 subnet segment
@@ -1058,6 +1059,7 @@ class RedPearl:
             with open(filepath, 'w') as f: json.dump(export_data, f, indent=4)
         except Exception: pass
 
+    # (v1.1.0) add: the helper method for the deception circuit breaker
     def _is_blacklisted(self, target_ip: str) -> bool:
         if self.disable_circuit_breaker:
             return False
