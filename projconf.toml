@@ -1,0 +1,30 @@
+[project]
+name = "RedPearl"
+version = "1.1.0"
+python_version = "3.11"
+entry_point = "src/redpearl/RedPearl.py"
+source_files = [
+    "src/redpearl/RedPearl.py",
+    "src/redpearl/defensive_parser.py",
+    "src/redpearl/engagement_engine.py",
+    "src/redpearl/mdns_state.py",
+    "src/redpearl/pruner.py",
+    "src/redpearl/stealth_engine.py",
+    "src/redpearl/wsd_engine.py",
+    "src/redpearl/egress_auditor.py",
+    "src/redpearl/mac_resolver.py",
+    "src/redpearl/protocols.json",
+    "src/redpearl/rdnsse.py",
+    "src/redpearl/state_db.py",
+    "src/redpearl/sysprinter.py"
+]
+dependencies = [
+    "defusedxml"
+]
+launch_command = "{ENTRY_POINT}"
+
+[runtimes]
+windows-x64 = "https://github.com/indygreg/python-build-standalone/releases/download/20230507/cpython-3.11.3+20230507-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
+linux-x64 = "https://github.com/indygreg/python-build-standalone/releases/download/20230507/cpython-3.11.3+20230507-x86_64-unknown-linux-gnu-install_only.tar.gz"
+macos-x64 = "https://github.com/indygreg/python-build-standalone/releases/download/20230507/cpython-3.11.3+20230507-x86_64-apple-darwin-install_only.tar.gz"
+macos-arm64 = "https://github.com/indygreg/python-build-standalone/releases/download/20230507/cpython-3.11.3+20230507-aarch64-apple-darwin-install_only.tar.gz"
