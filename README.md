@@ -272,12 +272,33 @@ def _get_windows_ipv4(cls):
 
 ---
 
+## v1.1.0
+
+This is the v1.1.0 of **RedPearl**, this time several new things has been added to make the tool work smoothly in even more monitored and larger networks, while still keeping it as stealthy as possible(asap lol) where the tool has moved from single-threaded/ad-hoc scanning queues to distributed passive state tracking, rate-shaping, and active-suppression defencing.
+
+So, this update has added:
+
+* **Adaptive Token-Bucket & Jitter Rate Shaping**: a thread-safe token bucket (to strictly cap packets-per-second across subnets) with a feedback loop (which automatically slows down the refill rate if network timeouts or ARP/NDP congestions spike, and speeds back up when normal traffic resumes)
+* **Subnet Partitioning & OUI Pruning**: creates an automated whitelist configuration that identifies noisy infrastructure such as printers, network switches, and access points and prunes them from active recon workflows (like egress audits and inverse DNS swarms), saving active thread resources and avoiding noisy firewall alarms.
+* **Deception Circuit Breaker**: watches for behavioral anomalies such as the existing detection where a static hardware MAC footprint exhibits rapidly morphing OS signatures automatically blacklists the host (and its subnet) from any further active engagement, and can be bypassed via CLI flag (`--no-circuit-breaker`) if desired.
+* **Thread-Safe SQLite Backend with WAL (Write-Ahead Logging) Mode**: migrate state management to a lightweight, thread-safe embedded SQLite backend with WAL (Write-Ahead Logging) mode.
+
+Not many significant bugs has been fixed in v1.1.0 but bug fixes would rain as soon as possible.
+Same goes to changes, completely backward compatible other than the change in `_process_packet` in `RedPearl,py`  which has been refactored for Subnet Partitioning and OUI Pruning update and the `_load_or_fetch_oui` method, now sourcing the `oui.txt` and `mac_vendors.json` on the fly with https requests instead of the old harcoding practice
+
+---
+
 ### Installation & Usage
-#### Prerequisites
+#### Prerequisites(not applicable if you're using the binaries)
 * Python 3.8+
 * (Optional but recommended) `defusedxml` for hardened SOAP parsing. Install via `pip install defusedxml`.
 
 #### Install it by:
+
+##### Downloading the binaries:
+
+You can download the tool by choosing the right binary from the releases section.
+
 ##### Cloning the repo:
 * Codeberg:
 ```bash
@@ -289,19 +310,21 @@ cd redpearl
 git clone https://github.com/nulsie/redpearl.git
 ```
 
-##### Through pip:
-```bash
-pip install redpearl-scanner
-```
-
 #### Usage 
 ##### Launch it by:
 * If you're cloning
 ```bash
 python RedPearl.py
 ```
-* If via pip:
-```bash
+
+* If via binary:
+
+1. ```bash
+cd RedPearl
+sudo make install
+```
+
+2. ```bash
 redpearl
 ```
 
