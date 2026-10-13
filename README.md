@@ -365,6 +365,7 @@ scan --reverse-swarm --resolver 192.168.1.1
 | `--egraud` | Launch the async outbound firewall egress path security auditor. |
 | `--egraud-target EGRAUD_TARGET` | External public destination IP used for egress mapping. |
 | `--egraud-ports EGRAUD_PORTS` | Comma-separated custom TCP ports to validate (e.g., 22,53,443,9001). |
+| `--no-circuit-breaker` | Disabling the Circuit breaker. |
 
 -----
 
