@@ -319,12 +319,14 @@ python RedPearl.py
 
 * If via binary:
 
-1. ```bash
+1. 
+```bash
 cd RedPearl
 sudo make install
 ```
 
-2. ```bash
+2. 
+```bash
 redpearl
 ```
 
