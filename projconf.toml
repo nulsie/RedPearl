@@ -16,7 +16,8 @@ source_files = [
     "src/redpearl/protocols.json",
     "src/redpearl/rdnsse.py",
     "src/redpearl/state_db.py",
-    "src/redpearl/sysprinter.py"
+    "src/redpearl/sysprinter.py",
+    "Makefile"
 ]
 dependencies = [
     "defusedxml"
